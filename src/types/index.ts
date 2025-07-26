@@ -29,7 +29,9 @@ export interface Secret {
     id: string;              // users/{userId} or groups/{groupId}
   };
   encryptedData: string;     // The AES-GCM encrypted secret content
-  encryptedDataKey: string;  // The RSA-OAEP encrypted dataKey
+  encryptedDataKeys: {       // Multiple encrypted data keys for different users
+    [userId: string]: string; // RSA-OAEP encrypted dataKey for each user
+  };
   lastModified: Date;
 }
 
@@ -49,8 +51,9 @@ export interface Group {
   ownerEmail: string;
   memberIds: string[];       // Array of user IDs
   memberEmails: string[];    // Array of user emails
-  groupPublicKey: string;
+  groupPublicKey: string;    // Group's public key in PEM format
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface GroupMembership {
@@ -59,6 +62,7 @@ export interface GroupMembership {
   groupId: string;
   // Key that gives this user access to the group's private key
   encryptedGroupPrivateKey: string;
+  createdAt: Date;
 }
 
 export interface VaultState {

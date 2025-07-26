@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
+import { useVault } from '@/contexts/VaultContext';
 import { addUserToGroup } from '@/lib/groups-service';
 import { useToast } from '@/components/ui/toast';
 
@@ -24,11 +25,21 @@ export function InviteUserModal({ isOpen, onClose, onInviteSent, groupId, groupN
   });
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const { privateKey } = useVault();
   const { showToast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email.trim() || !user?.uid) return;
+
+    if (!privateKey) {
+      showToast({
+        type: 'error',
+        title: 'Hata',
+        message: 'Vault kilidi açılmamış. Lütfen vault kilidini açın.',
+      });
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -36,7 +47,8 @@ export function InviteUserModal({ isOpen, onClose, onInviteSent, groupId, groupN
         groupId, 
         formData.email.trim(), 
         formData.role, 
-        user.uid
+        user.uid,
+        privateKey
       );
 
       showToast({

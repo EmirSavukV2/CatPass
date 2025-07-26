@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { createGroup } from '@/lib/groups-service';
+import { createGroupWithCrypto } from '@/lib/groups-service';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/toast';
 
@@ -34,7 +34,7 @@ export function GroupModal({ isOpen, onClose, onGroupCreated }: GroupModalProps)
 
     setIsLoading(true);
     try {
-      await createGroup({
+      await createGroupWithCrypto({
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         ownerId: user.uid,

@@ -70,17 +70,36 @@ export async function generateUserKeyPair(): Promise<CryptoKeyPair> {
  * Export a public key to PEM format
  */
 export async function exportPublicKey(publicKey: CryptoKey): Promise<string> {
-  const exported = await crypto.subtle.exportKey('spki', publicKey);
-  const exportedAsString = arrayBufferToBase64(exported);
-  return `-----BEGIN PUBLIC KEY-----\n${exportedAsString}\n-----END PUBLIC KEY-----`;
+  console.log('Starting public key export...');
+  try {
+    const exported = await crypto.subtle.exportKey('spki', publicKey);
+    console.log('Public key exported successfully, size:', exported.byteLength);
+    const exportedAsString = arrayBufferToBase64(exported);
+    console.log('Public key converted to base64, length:', exportedAsString.length);
+    const pemKey = `-----BEGIN PUBLIC KEY-----\n${exportedAsString}\n-----END PUBLIC KEY-----`;
+    console.log('PEM key created successfully');
+    return pemKey;
+  } catch (error) {
+    console.error('Error exporting public key:', error);
+    throw error;
+  }
 }
 
 /**
  * Import a public key from PEM format
  */
 export async function importPublicKey(pemKey: string): Promise<CryptoKey> {
+  if (!pemKey || typeof pemKey !== 'string') {
+    throw new Error('Invalid PEM key: key is undefined or not a string');
+  }
+  
   const pemHeader = "-----BEGIN PUBLIC KEY-----";
   const pemFooter = "-----END PUBLIC KEY-----";
+  
+  if (!pemKey.includes(pemHeader) || !pemKey.includes(pemFooter)) {
+    throw new Error('Invalid PEM key format: missing headers or footers');
+  }
+  
   const pemContents = pemKey.substring(pemHeader.length, pemKey.length - pemFooter.length);
   const binaryDerString = base64ToArrayBuffer(pemContents.replace(/\s/g, ''));
   
@@ -279,4 +298,223 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+/**
+ * Generate a group key pair
+ */
+export async function generateGroupKeyPair(): Promise<CryptoKeyPair> {
+  console.log('Starting group key pair generation...');
+  try {
+    const keyPair = await crypto.subtle.generateKey(
+      {
+        name: 'RSA-OAEP',
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: 'SHA-256'
+      },
+      true, // extractable
+      ['encrypt', 'decrypt']
+    );
+    console.log('Group key pair generated successfully');
+    return keyPair;
+  } catch (error) {
+    console.error('Error generating group key pair:', error);
+    throw error;
+  }
+}
+
+/**
+ * Export a private key and encrypt it for a specific user
+ */
+export async function encryptGroupPrivateKeyForUser(
+  groupPrivateKey: CryptoKey, 
+  userPublicKey: CryptoKey
+): Promise<string> {
+  console.log('Starting group private key encryption...');
+  try {
+    // Export the group private key
+    console.log('Exporting group private key...');
+    const exported = await crypto.subtle.exportKey('pkcs8', groupPrivateKey);
+    console.log('Group private key exported successfully, size:', exported.byteLength);
+    
+    // Check if the exported key is too large for RSA encryption
+    if (exported.byteLength > 190) { // RSA-OAEP can encrypt max ~190 bytes with 2048-bit key
+      console.log('Private key too large for direct RSA encryption, using hybrid approach...');
+      
+      // Generate AES key for hybrid encryption
+      const aesKey = crypto.getRandomValues(new Uint8Array(32)); // 256-bit AES key
+      
+      // Encrypt private key with AES-GCM
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const aesKeyObject = await crypto.subtle.importKey(
+        'raw',
+        aesKey,
+        'AES-GCM',
+        false,
+        ['encrypt']
+      );
+      
+      const encryptedPrivateKey = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        aesKeyObject,
+        exported
+      );
+      
+      // Encrypt AES key with RSA
+      const encryptedAesKey = await crypto.subtle.encrypt(
+        {
+          name: 'RSA-OAEP'
+        },
+        userPublicKey,
+        aesKey
+      );
+      
+      // Combine: [4 bytes: aes key length][encrypted aes key][12 bytes: iv][encrypted data]
+      const aesKeyLength = new Uint32Array([encryptedAesKey.byteLength]);
+      const combined = new Uint8Array(
+        4 + encryptedAesKey.byteLength + iv.byteLength + encryptedPrivateKey.byteLength
+      );
+      
+      let offset = 0;
+      combined.set(new Uint8Array(aesKeyLength.buffer), offset);
+      offset += 4;
+      combined.set(new Uint8Array(encryptedAesKey), offset);
+      offset += encryptedAesKey.byteLength;
+      combined.set(iv, offset);
+      offset += iv.byteLength;
+      combined.set(new Uint8Array(encryptedPrivateKey), offset);
+      
+      const result = arrayBufferToBase64(combined.buffer);
+      console.log('Group private key encryption completed successfully (hybrid)');
+      return result;
+    } else {
+      console.log('Using direct RSA encryption...');
+      // Direct RSA encryption for small keys
+      const encrypted = await crypto.subtle.encrypt(
+        {
+          name: 'RSA-OAEP'
+        },
+        userPublicKey,
+        exported
+      );
+      
+      const result = arrayBufferToBase64(encrypted);
+      console.log('Group private key encryption completed successfully (direct RSA)');
+      return result;
+    }
+  } catch (error) {
+    console.error('Error encrypting group private key:', error);
+    throw error;
+  }
+}
+
+/**
+ * Decrypt and import a group private key
+ */
+export async function decryptGroupPrivateKey(
+  encryptedGroupPrivateKey: string, 
+  userPrivateKey: CryptoKey
+): Promise<CryptoKey> {
+  console.log('Starting group private key decryption...');
+  try {
+    const combinedBuffer = base64ToArrayBuffer(encryptedGroupPrivateKey);
+    const combined = new Uint8Array(combinedBuffer);
+    
+    // Check if this is hybrid encryption (has length prefix)
+    if (combined.byteLength >= 4) {
+      const aesKeyLengthArray = new Uint32Array(combined.slice(0, 4).buffer);
+      const aesKeyLength = aesKeyLengthArray[0];
+      
+      // If the length makes sense for RSA encryption, this is hybrid
+      if (aesKeyLength === 256) { // 2048-bit RSA encrypted data is 256 bytes
+        console.log('Detected hybrid encryption format');
+        
+        let offset = 4;
+        const encryptedAesKey = combined.slice(offset, offset + aesKeyLength).buffer;
+        offset += aesKeyLength;
+        
+        const iv = combined.slice(offset, offset + 12);
+        offset += 12;
+        
+        const encryptedPrivateKey = combined.slice(offset).buffer;
+        
+        // Decrypt the AES key with user's private key
+        console.log('Decrypting AES key with RSA...');
+        const aesKeyRaw = await crypto.subtle.decrypt(
+          {
+            name: 'RSA-OAEP'
+          },
+          userPrivateKey,
+          encryptedAesKey
+        );
+        
+        // Import the AES key
+        const aesKey = await crypto.subtle.importKey(
+          'raw',
+          aesKeyRaw,
+          'AES-GCM',
+          false,
+          ['decrypt']
+        );
+        
+        // Decrypt the private key with AES
+        console.log('Decrypting private key with AES...');
+        const decryptedPrivateKey = await crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv
+          },
+          aesKey,
+          encryptedPrivateKey
+        );
+        
+        // Import the group private key
+        const groupPrivateKey = await crypto.subtle.importKey(
+          'pkcs8',
+          decryptedPrivateKey,
+          {
+            name: 'RSA-OAEP',
+            hash: 'SHA-256'
+          },
+          true, // Make extractable for re-encryption
+          ['decrypt']
+        );
+        
+        console.log('Group private key decryption completed successfully (hybrid)');
+        return groupPrivateKey;
+      }
+    }
+    
+    // Fallback to direct RSA decryption
+    console.log('Using direct RSA decryption...');
+    const decryptedPrivateKey = await crypto.subtle.decrypt(
+      {
+        name: 'RSA-OAEP'
+      },
+      userPrivateKey,
+      combinedBuffer
+    );
+    
+    // Import the group private key
+    const groupPrivateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      decryptedPrivateKey,
+      {
+        name: 'RSA-OAEP',
+        hash: 'SHA-256'
+      },
+      true, // Make extractable for re-encryption
+      ['decrypt']
+    );
+    
+    console.log('Group private key decryption completed successfully (direct RSA)');
+    return groupPrivateKey;
+  } catch (error) {
+    console.error('Error decrypting group private key:', error);
+    throw error;
+  }
 }
