@@ -125,18 +125,6 @@ export function SecretsTable({
   };
 
   const handleSaveSecret = async (secretData: SecretData & { collectionId?: string }) => {
-    console.log('SecretsTable handleSaveSecret:', { secretData, selectedCollection, selectedProject, selectedGroup });
-    
-    // Don't allow creating secrets if no project or group is selected
-    if (!selectedProject && !selectedGroup && !selectedCollection) {
-      showToast({
-        type: 'error',
-        title: 'Proje veya Grup Seçin',
-        message: 'Şifre oluşturmak için önce bir proje veya grup seçmelisiniz.'
-      });
-      return;
-    }
-    
     try {
       if (editingSecret) {
         await updateSecret(editingSecret.id, secretData, secretData.collectionId);
@@ -162,8 +150,10 @@ export function SecretsTable({
           ownerType = 'user';
           ownerId = ''; // Will be set by the service to current user
         } else {
-          // This should not happen anymore, but just in case
-          throw new Error('No project or group selected');
+          // Creating a personal secret (no project/group selected)
+          projectId = 'personal';
+          ownerType = 'user';
+          ownerId = ''; // Will be set by the service to current user
         }
         
         await createSecret(secretData, projectId, ownerType, ownerId, secretData.collectionId);
@@ -221,65 +211,8 @@ export function SecretsTable({
       };
       return `${groupNames[selectedGroup] || 'Group'} Secrets`;
     }
-    return 'CatPass - Şifre Yöneticisi';
+    return 'All Secrets';
   };
-
-  // Show welcome screen if no project or group is selected
-  if (!selectedProject && !selectedGroup && !selectedCollection) {
-    return (
-      <Card>
-        <CardContent className="pt-16 pb-16 text-center">
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-8">
-              <div className="text-6xl mb-4">🐱</div>
-              <h1 className="text-3xl font-bold mb-4">CatPass&apos;e Hoş Geldiniz</h1>
-              <p className="text-lg text-gray-600 mb-8">
-                Güvenli şifre yönetimi için tasarlanmış modern bir çözüm
-              </p>
-            </div>
-            
-            <div className="grid md:grid-cols-2 gap-6 text-left">
-              <div className="p-6 border rounded-lg">
-                <h3 className="text-xl font-semibold mb-3">🚀 Başlamak için</h3>
-                <ul className="space-y-2 text-gray-600">
-                  <li>• Sol menüden bir proje seçin</li>
-                  <li>• Veya bir grup oluşturun/seçin</li>
-                  <li>• Şifrelerinizi güvenle saklayın</li>
-                </ul>
-              </div>
-              
-              <div className="p-6 border rounded-lg">
-                <h3 className="text-xl font-semibold mb-3">🔒 Güvenlik Özellikleri</h3>
-                <ul className="space-y-2 text-gray-600">
-                  <li>• End-to-end şifreleme</li>
-                  <li>• Yerel anahtar yönetimi</li>
-                  <li>• Grup paylaşımı desteği</li>
-                </ul>
-              </div>
-              
-              <div className="p-6 border rounded-lg">
-                <h3 className="text-xl font-semibold mb-3">📁 Organize Etme</h3>
-                <ul className="space-y-2 text-gray-600">
-                  <li>• Projeler ile kategorilendirin</li>
-                  <li>• Koleksiyonlar oluşturun</li>
-                  <li>• Dosyalar yükleyin</li>
-                </ul>
-              </div>
-              
-              <div className="p-6 border rounded-lg">
-                <h3 className="text-xl font-semibold mb-3">👥 İşbirliği</h3>
-                <ul className="space-y-2 text-gray-600">
-                  <li>• Gruplar oluşturun</li>
-                  <li>• Güvenle paylaşın</li>
-                  <li>• Takım çalışması yapın</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (error) {
     return (
@@ -314,12 +247,10 @@ export function SecretsTable({
               {getContextTitle()}
             </CardTitle>
           </div>
-          {(selectedProject || selectedGroup || selectedCollection) && (
-            <Button onClick={handleAddSecret}>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Add Secret
-            </Button>
-          )}
+          <Button onClick={handleAddSecret}>
+            <PlusIcon className="w-4 h-4 mr-2" />
+            Add Secret
+          </Button>
         </div>
         <div className="flex items-center space-x-2 mt-4">
           <div className="relative flex-1 max-w-sm">
@@ -482,7 +413,6 @@ export function SecretsTable({
         isEditing={!!editingSecret}
         projectId={selectedProject || undefined}
         groupId={selectedGroup || undefined}
-        selectedCollection={selectedCollection || undefined}
       />
     </Card>
   );

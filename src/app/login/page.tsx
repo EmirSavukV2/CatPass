@@ -23,7 +23,9 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // Wait for the auth state to propagate and user data to load
+      await new Promise(resolve => setTimeout(resolve, 500));
       router.push('/unlock');
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to sign in';

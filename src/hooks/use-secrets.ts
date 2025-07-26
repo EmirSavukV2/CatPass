@@ -5,7 +5,7 @@ import { useVault } from '@/contexts/VaultContext';
 import { SecretsService } from '@/lib/secrets-service';
 import { Secret, SecretData } from '@/types';
 
-export function useSecrets(projectId?: string, groupId?: string) {
+export function useSecrets(projectId?: string, groupId?: string, collectionId?: string) {
   const [secrets, setSecrets] = useState<Secret[]>([]);
   const [decryptedSecrets, setDecryptedSecrets] = useState<{ [key: string]: SecretData }>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -19,20 +19,35 @@ export function useSecrets(projectId?: string, groupId?: string) {
   const loadSecrets = useCallback(async () => {
     if (!secretsService || !isUnlocked) return;
 
+    // Don't load secrets if no project or group is selected
+    if (!projectId && !groupId && !collectionId) {
+      setSecrets([]);
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('loadSecrets called with:', { projectId, groupId, collectionId });
     setIsLoading(true);
     setError(null);
 
     try {
       let loadedSecrets: Secret[];
 
-      if (projectId) {
+      if (collectionId) {
+        console.log('Loading secrets for collection:', collectionId);
+        loadedSecrets = await secretsService.getSecretsForCollection(collectionId, projectId, groupId);
+      } else if (projectId) {
+        console.log('Loading secrets for project:', projectId);
         loadedSecrets = await secretsService.getSecretsForProject(projectId);
       } else if (groupId) {
+        console.log('Loading secrets for group:', groupId);
         loadedSecrets = await secretsService.getSecretsForGroup(groupId);
       } else {
-        loadedSecrets = await secretsService.getAllUserSecrets();
+        // This should not happen anymore, but just in case
+        loadedSecrets = [];
       }
 
+      console.log('Loaded secrets:', loadedSecrets);
       setSecrets(loadedSecrets);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load secrets';
@@ -40,7 +55,7 @@ export function useSecrets(projectId?: string, groupId?: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [secretsService, isUnlocked, projectId, groupId]);
+  }, [secretsService, isUnlocked, projectId, groupId, collectionId]);
 
   const decryptSecret = useCallback(async (secretId: string): Promise<SecretData | null> => {
     if (!secretsService) return null;
@@ -69,7 +84,8 @@ export function useSecrets(projectId?: string, groupId?: string) {
     secretData: SecretData, 
     targetProjectId: string,
     ownerType: 'user' | 'group' = 'user',
-    ownerId?: string
+    ownerId?: string,
+    targetCollectionId?: string
   ): Promise<string | null> => {
     if (!secretsService) return null;
 
@@ -78,7 +94,8 @@ export function useSecrets(projectId?: string, groupId?: string) {
         secretData, 
         targetProjectId, 
         ownerType, 
-        ownerId
+        ownerId,
+        targetCollectionId
       );
       await loadSecrets(); // Refresh the list
       return secretId;
@@ -91,12 +108,13 @@ export function useSecrets(projectId?: string, groupId?: string) {
 
   const updateSecret = useCallback(async (
     secretId: string, 
-    secretData: SecretData
+    secretData: SecretData,
+    targetCollectionId?: string
   ): Promise<boolean> => {
     if (!secretsService) return false;
 
     try {
-      await secretsService.updateSecret(secretId, secretData);
+      await secretsService.updateSecret(secretId, secretData, targetCollectionId);
       
       // Update cached decrypted data
       setDecryptedSecrets(prev => ({

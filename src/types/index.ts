@@ -24,6 +24,7 @@ export interface Secret {
   id: string;
   name: string;
   projectId: string;         // projects/{projectId}
+  collectionId?: string;     // collections/{collectionId} - optional
   owner: {
     type: 'user' | 'group';
     id: string;              // users/{userId} or groups/{groupId}
@@ -33,6 +34,38 @@ export interface Secret {
     [userId: string]: string; // RSA-OAEP encrypted dataKey for each user
   };
   lastModified: Date;
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  description?: string;
+  projectId?: string;        // Optional - belongs to a project
+  groupId?: string;          // Optional - belongs to a group  
+  owner: {
+    type: 'user' | 'group';
+    id: string;              // users/{userId} or groups/{groupId}
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FileUpload {
+  id: string;
+  name: string;
+  originalName: string;
+  type: string;              // MIME type
+  size: number;              // Size in bytes
+  projectId?: string;        // Optional - belongs to a project
+  groupId?: string;          // Optional - belongs to a group
+  collectionId?: string;     // Optional - belongs to a collection
+  owner: {
+    type: 'user' | 'group';
+    id: string;              // users/{userId} or groups/{groupId}
+  };
+  storagePath: string;       // Firebase Storage path
+  downloadUrl?: string;      // Firebase Storage download URL (loaded on demand)
+  uploadedAt: Date;
 }
 
 export interface SecretData {

@@ -50,8 +50,10 @@ export class SecretsService {
     secretData: SecretData, 
     projectId: string, 
     ownerType: 'user' | 'group' = 'user',
-    ownerId?: string
+    ownerId?: string,
+    collectionId?: string
   ): Promise<string> {
+    console.log('SecretsService createSecret:', { secretData, projectId, ownerType, ownerId, collectionId });
     try {
       // Generate a new data key for this secret
       const dataKey = generateDataKey();
@@ -97,6 +99,7 @@ export class SecretsService {
       const secretDoc = {
         name: secretData.name,
         projectId,
+        collectionId: collectionId || null,
         owner: {
           type: ownerType,
           id: ownerId || this.user.authUid
@@ -106,7 +109,9 @@ export class SecretsService {
         lastModified: Timestamp.now()
       };
 
+      console.log('Creating secret document:', secretDoc);
       const docRef = await addDoc(collection(db, 'secrets'), secretDoc);
+      console.log('Created secret with ID:', docRef.id);
       return docRef.id;
     } catch (error) {
       console.error('Error creating secret:', error);
@@ -178,7 +183,7 @@ export class SecretsService {
   /**
    * Update an existing secret (supports both user and group secrets)
    */
-  async updateSecret(secretId: string, secretData: SecretData): Promise<void> {
+  async updateSecret(secretId: string, secretData: SecretData, collectionId?: string): Promise<void> {
     try {
       // First get the existing secret to preserve encrypted data keys
       const secretDoc = await getDoc(doc(db, 'secrets', secretId));
@@ -224,6 +229,7 @@ export class SecretsService {
         name: secretData.name,
         encryptedData,
         encryptedDataKeys,
+        ...(collectionId !== undefined && { collectionId: collectionId || null }),
         lastModified: Timestamp.now()
       });
     } catch (error) {
@@ -258,22 +264,46 @@ export class SecretsService {
       const querySnapshot = await getDocs(q);
       const secrets: Secret[] = [];
 
-      querySnapshot.forEach((doc) => {
+      for (const doc of querySnapshot.docs) {
         const data = doc.data();
+        let hasAccess = false;
         
-        // Only include secrets the current user can access
+        // Check if user has direct access (user secret)
         if (data.encryptedDataKeys && data.encryptedDataKeys[this.user.authUid]) {
+          hasAccess = true;
+        } else if (data.owner?.type === 'group') {
+          // Check if this is a group secret and user has access through group membership
+          const groupId = data.owner.id;
+          const groupEncryptedDataKey = data.encryptedDataKeys && data.encryptedDataKeys[`group:${groupId}`];
+          
+          if (groupEncryptedDataKey) {
+            // Check if user is a member of this group  
+            try {
+              const { getGroupMembership } = await import('@/lib/groups-service');
+              const membership = await getGroupMembership(this.user.authUid, groupId);
+              
+              if (membership) {
+                hasAccess = true;
+              }
+            } catch (error) {
+              console.log('Error checking group membership:', error);
+            }
+          }
+        }
+        
+        if (hasAccess) {
           secrets.push({
             id: doc.id,
             name: data.name,
             projectId: data.projectId,
+            collectionId: data.collectionId || null,
             owner: data.owner,
             encryptedData: data.encryptedData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
         }
-      });
+      }
 
       return secrets;
     } catch (error) {
@@ -307,6 +337,7 @@ export class SecretsService {
             id: doc.id,
             name: data.name,
             projectId: data.projectId,
+            collectionId: data.collectionId || null,
             owner: data.owner,
             encryptedData: data.encryptedData,
             encryptedDataKeys: data.encryptedDataKeys,
@@ -336,26 +367,139 @@ export class SecretsService {
       const querySnapshot = await getDocs(allSecretsQuery);
       const secrets: Secret[] = [];
 
-      querySnapshot.forEach((doc) => {
+      for (const doc of querySnapshot.docs) {
         const data = doc.data();
+        let hasAccess = false;
         
-        // Include secret if user can access it
+        // Check if user has direct access (user secret)
         if (data.encryptedDataKeys && data.encryptedDataKeys[this.user.authUid]) {
+          hasAccess = true;
+        } else if (data.owner?.type === 'group') {
+          // Check if this is a group secret and user has access through group membership
+          const groupId = data.owner.id;
+          const groupEncryptedDataKey = data.encryptedDataKeys && data.encryptedDataKeys[`group:${groupId}`];
+          
+          if (groupEncryptedDataKey) {
+            // Check if user is a member of this group  
+            try {
+              const { getGroupMembership } = await import('@/lib/groups-service');
+              const membership = await getGroupMembership(this.user.authUid, groupId);
+              
+              if (membership) {
+                hasAccess = true;
+              }
+            } catch (error) {
+              console.log('Error checking group membership:', error);
+            }
+          }
+        }
+        
+        if (hasAccess) {
           secrets.push({
             id: doc.id,
             name: data.name,
             projectId: data.projectId,
+            collectionId: data.collectionId || null,
             owner: data.owner,
             encryptedData: data.encryptedData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
         }
-      });
+      }
 
       return secrets;
     } catch (error) {
       console.error('Error fetching user secrets:', error);
+      throw new Error('Failed to fetch secrets');
+    }
+  }
+
+  /**
+   * Get secrets for a specific collection
+   */
+  async getSecretsForCollection(collectionId: string, projectId?: string, groupId?: string): Promise<Secret[]> {
+    console.log('getSecretsForCollection called with:', { collectionId, projectId, groupId });
+    try {
+      const q = query(
+        collection(db, 'secrets'),
+        where('collectionId', '==', collectionId),
+        orderBy('lastModified', 'desc')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const secrets: Secret[] = [];
+      
+      console.log('Found', querySnapshot.size, 'secrets for collection', collectionId);
+
+      for (const doc of querySnapshot.docs) {
+        const data = doc.data();
+        console.log('Processing secret doc:', doc.id, 'data:', data);
+        
+        let hasAccess = false;
+        let matchesContext = true; // Default to true for collections
+        
+        // Check if the secret matches the current project/group context (only if context is provided)
+        if (groupId || projectId) {
+          matchesContext = false; // Reset to false if we have context to check
+          
+          if (groupId && data.owner?.type === 'group' && data.owner.id === groupId) {
+            matchesContext = true;
+          } else if (projectId && data.projectId === projectId && (!data.owner || data.owner.type === 'user')) {
+            matchesContext = true;
+          }
+        }
+        
+        // Only proceed if the secret matches the current context
+        if (!matchesContext) {
+          console.log('Secret does not match current context:', doc.id);
+          continue;
+        }
+        
+        // Check if user has direct access (user secret)
+        if (data.encryptedDataKeys && data.encryptedDataKeys[this.user.authUid]) {
+          hasAccess = true;
+        } else if (data.owner?.type === 'group') {
+          // Check if this is a group secret and user has access through group membership
+          const groupIdFromData = data.owner.id;
+          const groupEncryptedDataKey = data.encryptedDataKeys && data.encryptedDataKeys[`group:${groupIdFromData}`];
+          
+          if (groupEncryptedDataKey) {
+            // Check if user is a member of this group  
+            try {
+              const { getGroupMembership } = await import('@/lib/groups-service');
+              const membership = await getGroupMembership(this.user.authUid, groupIdFromData);
+              
+              if (membership) {
+                hasAccess = true;
+                console.log('User has access to group secret through membership');
+              }
+            } catch (error) {
+              console.log('Error checking group membership:', error);
+            }
+          }
+        }
+        
+        if (hasAccess) {
+          secrets.push({
+            id: doc.id,
+            name: data.name,
+            projectId: data.projectId,
+            collectionId: data.collectionId || null,
+            owner: data.owner,
+            encryptedData: data.encryptedData,
+            encryptedDataKeys: data.encryptedDataKeys,
+            lastModified: data.lastModified.toDate()
+          });
+        } else {
+          console.log('User does not have access to secret:', doc.id);
+        }
+      }
+
+      console.log('Returning', secrets.length, 'accessible secrets for collection');
+      return secrets;
+    } catch (error) {
+      console.error('Error fetching secrets for collection:', error);
       throw new Error('Failed to fetch secrets');
     }
   }
