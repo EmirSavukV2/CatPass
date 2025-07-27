@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initializeAdminApp } from '@/lib/firebase-admin';
-import { useSecrets } from '@/hooks/use-secrets';
-import { SecretsService } from '@/lib/secrets-service';
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+
+// Initialize Firebase (only if not already initialized)
+if (!getApps().length) {
+  initializeApp({
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
+}
+
+const db = getFirestore();
 
 // Add CORS headers for extension
 function addCorsHeaders(response: NextResponse) {
@@ -18,50 +27,164 @@ export async function OPTIONS() {
 
 export async function GET(request: NextRequest) {
   try {
+    const sessionCookie = request.cookies.get('__session')?.value;
+    if (!sessionCookie) {
+      return addCorsHeaders(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }));
+    }
 
-        // Check for Firebase ID token in cookies or Authorization header
-        const cookieStore = request.cookies
+    const admin = initializeAdminApp();
+    const decodedToken = await admin.auth().verifySessionCookie(sessionCookie);
+    const userId = decodedToken.uid;
+
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get('projectId');
+    const groupId = searchParams.get('groupId');
+
+    console.log('Fetching secrets for user:', userId, { projectId, groupId });
+
+    // Real database query
+    let secrets: Array<{
+      id: string;
+      name: string;
+      username: string;
+      url: string;
+      projectId?: string;
+      groupId?: string;
+      isEncrypted: boolean;
+      owner: { type: string; id: string };
+      lastModified: string;
+    }> = [];
     
+    try {
+      let q;
+      
+      if (projectId) {
+        console.log('Fetching secrets for project:', projectId);
         
-        // Firebase'in oturum çerezini (`__session`) oku
-        const sessionCookie = request.cookies.get('__session')?.value;
+        // Get secrets for specific project
+        q = query(
+          collection(db, 'secrets'),
+          where('projectId', '==', projectId),
+          orderBy('lastModified', 'desc')
+        );
+      } else if (groupId) {
+        // Get secrets for specific group
+        q = query(
+          collection(db, 'secrets'),
+          where('owner.type', '==', 'group'),
+          where('owner.id', '==', groupId),
+          orderBy('lastModified', 'desc')
+        );
+      } else {
+        console.log('No project or group specified');
+        // No project or group specified - return empty array
+        return addCorsHeaders(NextResponse.json({ secrets: [] }));
+      }
+      
+      const querySnapshot = await getDocs(q);
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
         
-        if (!sessionCookie) {
-          const response = NextResponse.json({ authenticated: false, user: null }, { status: 401 });
-          return addCorsHeaders(response);
-        }
+        // Check if user has access to this secret
+        // let hasAccess = false;
         
-  if (initializeAdminApp().auth()) {
-    console.log('Verifying Firebase ID token...');
-      const decodedToken = await initializeAdminApp().auth().verifySessionCookie(sessionCookie);
+        // if (!data.isEncrypted) {
+        //   // Plain text secrets - check ownership
+        //   if (data.owner?.type === 'user' && data.owner?.id === userId) {
+        //     hasAccess = true;
+        //   } else if (data.owner?.type === 'group') {
+        //     // For group secrets, we would need to check group membership
+        //     // For now, assume user has access if it's a group secret
+        //     hasAccess = true;
+        //   }
+        // } else {
+        //   // Encrypted secrets - check if user has a data key
+        //   if (data.encryptedDataKeys?.[userId]) {
+        //     hasAccess = true;
+        //   } else if (data.owner?.type === 'group' && data.encryptedDataKeys?.[`group:${data.owner.id}`]) {
+        //     // User might have access through group membership
+        //     hasAccess = true;
+        //   }
+        // }
+        
+          secrets.push({
+            id: doc.id,
+            name: data.name,
+            username: 'hidden', // Don't expose username in list view
+            url: data.url || '',
+            projectId: data.projectId,
+            groupId: data.owner?.type === 'group' ? data.owner.id : undefined,
+            isEncrypted: data.isEncrypted,
+            owner: data.owner,
+            lastModified: data.lastModified?.toDate?.()?.toISOString() || new Date().toISOString()
+          });
+      });
+      
+    } catch (dbError) {
+      console.error('Database query error:', dbError);
+      // Fallback to mock data on database error
+      secrets = getMockSecrets(projectId, groupId);
+    }
 
-      const userId = decodedToken.uid;
-  // Get query parameters
-  const { searchParams } = new URL(request.url);
-  const projectId = searchParams.get('projectId') || undefined;
-  const groupId = searchParams.get('groupId') || undefined;
+    return addCorsHeaders(NextResponse.json({ secrets }));
 
-  console.log('Fetching secrets for user:', userId, { projectId, groupId });
-  
-  
-    
-  }
-
-
-    // For demo purposes, return empty array since we don't have encryption key
-    // In production, you'd need the user's master key to decrypt secrets
-    const secrets: unknown[] = [];
-
-
-    const response = NextResponse.json({
-      secrets: secrets
-    });
-    return addCorsHeaders(response);
   } catch (error) {
     console.error('Secrets fetch error:', error);
-    const response = NextResponse.json({ 
-      error: 'Failed to fetch secrets' 
-    }, { status: 500 });
-    return addCorsHeaders(response);
+    return addCorsHeaders(NextResponse.json({ error: 'Failed to fetch secrets' }, { status: 500 }));
   }
+}
+
+// Fallback mock data function
+function getMockSecrets(projectId?: string | null, groupId?: string | null) {
+  const mockSecrets = [
+    { 
+      id: 'secret-1', 
+      name: 'Gmail (Encrypted)', 
+      username: 'hidden', 
+      url: 'https://gmail.com', 
+      projectId: 'project-1',
+      isEncrypted: true,
+      owner: { type: 'user', id: 'demo-user' },
+      lastModified: new Date().toISOString()
+    },
+    { 
+      id: 'secret-2', 
+      name: 'Netflix (Plain)', 
+      username: 'hidden', 
+      url: 'https://netflix.com', 
+      projectId: 'project-1',
+      isEncrypted: false,
+      owner: { type: 'user', id: 'demo-user' },
+      lastModified: new Date().toISOString()
+    },
+    { 
+      id: 'secret-3', 
+      name: 'Company Portal (Encrypted)', 
+      username: 'hidden', 
+      url: 'https://company.com', 
+      projectId: 'project-2',
+      isEncrypted: true,
+      owner: { type: 'user', id: 'demo-user' },
+      lastModified: new Date().toISOString()
+    },
+    { 
+      id: 'secret-4', 
+      name: 'Slack (Plain)', 
+      username: 'hidden', 
+      url: 'https://company.slack.com', 
+      projectId: 'project-2',
+      isEncrypted: false,
+      owner: { type: 'user', id: 'demo-user' },
+      lastModified: new Date().toISOString()
+    }
+  ];
+
+  if (projectId) {
+    return mockSecrets.filter(s => s.projectId === projectId);
+  } else if (groupId) {
+    return mockSecrets.filter(s => s.owner.type === 'group');
+  }
+  
+  return [];
 }

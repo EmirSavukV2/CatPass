@@ -85,7 +85,8 @@ export function useSecrets(projectId?: string, groupId?: string, collectionId?: 
     targetProjectId: string,
     ownerType: 'user' | 'group' = 'user',
     ownerId?: string,
-    targetCollectionId?: string
+    targetCollectionId?: string,
+    isEncrypted: boolean = false  // New parameter to control encryption
   ): Promise<string | null> => {
     if (!secretsService) return null;
 
@@ -95,7 +96,8 @@ export function useSecrets(projectId?: string, groupId?: string, collectionId?: 
         targetProjectId, 
         ownerType, 
         ownerId,
-        targetCollectionId
+        targetCollectionId,
+        isEncrypted
       );
       await loadSecrets(); // Refresh the list
       return secretId;

@@ -29,8 +29,11 @@ export interface Secret {
     type: 'user' | 'group';
     id: string;              // users/{userId} or groups/{groupId}
   };
-  encryptedData: string;     // The AES-GCM encrypted secret content
-  encryptedDataKeys: {       // Multiple encrypted data keys for different users
+  // New field for encryption type
+  isEncrypted: boolean;      // true = encrypted, false = plain text
+  encryptedData?: string;    // The AES-GCM encrypted secret content (only if isEncrypted=true)
+  plainData?: string;        // Plain text JSON data (only if isEncrypted=false)
+  encryptedDataKeys?: {      // Multiple encrypted data keys for different users (only if isEncrypted=true)
     [userId: string]: string; // RSA-OAEP encrypted dataKey for each user
   };
   lastModified: Date;

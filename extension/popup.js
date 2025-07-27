@@ -236,24 +236,24 @@ class CatPassExtension {
     }
 
     showProjectsList() {
-        document.getElementById('projectsList').style.display = 'block';
+        document.getElementById('projectsList').style.display = 'flex';
         document.getElementById('projectSecrets').style.display = 'none';
     }
 
     showProjectSecrets(projectName) {
         document.getElementById('projectsList').style.display = 'none';
-        document.getElementById('projectSecrets').style.display = 'block';
+        document.getElementById('projectSecrets').style.display = 'flex';
         document.getElementById('projectSecretsTitle').textContent = `${projectName} Secrets`;
     }
 
     showGroupsList() {
-        document.getElementById('groupsList').style.display = 'block';
+        document.getElementById('groupsList').style.display = 'flex';
         document.getElementById('groupSecrets').style.display = 'none';
     }
 
     showGroupSecrets(groupName) {
         document.getElementById('groupsList').style.display = 'none';
-        document.getElementById('groupSecrets').style.display = 'block';
+        document.getElementById('groupSecrets').style.display = 'flex';
         document.getElementById('groupSecretsTitle').textContent = `${groupName} Secrets`;
     }
 

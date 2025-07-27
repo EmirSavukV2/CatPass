@@ -44,55 +44,65 @@ export class SecretsService {
   }
 
   /**
-   * Create a new secret with support for multiple users (groups)
+   * Create a new secret with support for multiple users (groups) and encryption type
    */
   async createSecret(
     secretData: SecretData, 
     projectId: string, 
     ownerType: 'user' | 'group' = 'user',
     ownerId?: string,
-    collectionId?: string
+    collectionId?: string,
+    isEncrypted: boolean = false  // New parameter to control encryption
   ): Promise<string> {
-    console.log('SecretsService createSecret:', { secretData, projectId, ownerType, ownerId, collectionId });
+    console.log('SecretsService createSecret:', { secretData, projectId, ownerType, ownerId, collectionId, isEncrypted });
     try {
-      // Generate a new data key for this secret
-      const dataKey = generateDataKey();
-      
-      // Encrypt the secret data
       const jsonData = JSON.stringify(secretData);
-      const encryptedData = await encryptData(jsonData, dataKey);
-      
-      const encryptedDataKeys: { [userId: string]: string } = {};
-      
-      if (ownerType === 'group' && ownerId) {
-        // For group secrets, encrypt data key with group public key
-        const groupDoc = await getDoc(doc(db, 'groups', ownerId));
-        if (!groupDoc.exists()) {
-          throw new Error('Grup bulunamadı');
+      let encryptedData: string | undefined;
+      let plainData: string | undefined;
+      let encryptedDataKeys: { [userId: string]: string } | undefined;
+
+      if (isEncrypted) {
+        // Generate a new data key for this secret
+        const dataKey = generateDataKey();
+        
+        // Encrypt the secret data
+        encryptedData = await encryptData(jsonData, dataKey);
+        
+        encryptedDataKeys = {};
+        
+        if (ownerType === 'group' && ownerId) {
+          // For group secrets, encrypt data key with group public key
+          const groupDoc = await getDoc(doc(db, 'groups', ownerId));
+          if (!groupDoc.exists()) {
+            throw new Error('Grup bulunamadı');
+          }
+          
+          const groupData = groupDoc.data();
+          console.log('Group data retrieved:', { 
+            id: ownerId, 
+            groupPublicKey: groupData?.groupPublicKey ? 'exists' : 'missing',
+            groupData: groupData 
+          });
+          
+          if (!groupData?.groupPublicKey) {
+            throw new Error('Grup public key bulunamadı. Grup düzgün oluşturulmamış olabilir.');
+          }
+          
+          const groupPublicKey = await importPublicKey(groupData.groupPublicKey);
+          
+          // Encrypt data key with group public key - all group members will be able to decrypt
+          // using their encrypted group private key
+          encryptedDataKeys['group:' + ownerId] = await encryptDataKey(dataKey, groupPublicKey);
+        } else {
+          // For user secrets, encrypt data key only for the user
+          if (!this.publicKey) {
+            await this.initialize();
+          }
+          encryptedDataKeys[this.user.authUid] = await encryptDataKey(dataKey, this.publicKey!);
         }
-        
-        const groupData = groupDoc.data();
-        console.log('Group data retrieved:', { 
-          id: ownerId, 
-          groupPublicKey: groupData?.groupPublicKey ? 'exists' : 'missing',
-          groupData: groupData 
-        });
-        
-        if (!groupData?.groupPublicKey) {
-          throw new Error('Grup public key bulunamadı. Grup düzgün oluşturulmamış olabilir.');
-        }
-        
-        const groupPublicKey = await importPublicKey(groupData.groupPublicKey);
-        
-        // Encrypt data key with group public key - all group members will be able to decrypt
-        // using their encrypted group private key
-        encryptedDataKeys['group:' + ownerId] = await encryptDataKey(dataKey, groupPublicKey);
       } else {
-        // For user secrets, encrypt data key only for the user
-        if (!this.publicKey) {
-          await this.initialize();
-        }
-        encryptedDataKeys[this.user.authUid] = await encryptDataKey(dataKey, this.publicKey!);
+        // Plain text storage - no encryption
+        plainData = jsonData;
       }
       
       // Create the secret document
@@ -104,8 +114,8 @@ export class SecretsService {
           type: ownerType,
           id: ownerId || this.user.authUid
         },
-        encryptedData,
-        encryptedDataKeys,
+        isEncrypted,
+        ...(isEncrypted ? { encryptedData, encryptedDataKeys } : { plainData }),
         lastModified: Timestamp.now()
       };
 
@@ -120,7 +130,7 @@ export class SecretsService {
   }
 
   /**
-   * Retrieve and decrypt a secret (supports both user and group secrets)
+   * Retrieve and decrypt a secret (supports both user and group secrets, encrypted and plain text)
    */
   async getSecret(secretId: string): Promise<SecretData | null> {
     try {
@@ -132,6 +142,26 @@ export class SecretsService {
 
       const secretData = secretDoc.data();
       
+      // Check if this is an encrypted or plain text secret
+      if (!secretData.isEncrypted) {
+        // Plain text secret - return directly
+        const plainJson = secretData.plainData;
+        
+        // Check if plainData exists and is valid
+        if (!plainJson) {
+          console.error('Plain text secret has no plainData field:', secretId);
+          throw new Error('Secret data is corrupted or empty');
+        }
+        
+        try {
+          return JSON.parse(plainJson);
+        } catch (error) {
+          console.error('Failed to parse plain text secret data:', error, 'Data:', plainJson);
+          throw new Error('Secret data is corrupted');
+        }
+      }
+
+      // Encrypted secret - decrypt it
       // First try user's own key
       const userEncryptedDataKey = secretData.encryptedDataKeys?.[this.user.authUid];
       let dataKey: ArrayBuffer;
@@ -171,9 +201,24 @@ export class SecretsService {
       }
       
       // Decrypt the secret data
+      if (!secretData.encryptedData) {
+        console.error('Encrypted secret has no encryptedData field:', secretId);
+        throw new Error('Encrypted secret data is missing');
+      }
+      
       const decryptedJson = await decryptData(secretData.encryptedData, dataKey);
       
-      return JSON.parse(decryptedJson);
+      if (!decryptedJson) {
+        console.error('Failed to decrypt secret data:', secretId);
+        throw new Error('Failed to decrypt secret data');
+      }
+      
+      try {
+        return JSON.parse(decryptedJson);
+      } catch (error) {
+        console.error('Failed to parse decrypted secret data:', error, 'Data:', decryptedJson);
+        throw new Error('Decrypted secret data is corrupted');
+      }
     } catch (error) {
       console.error('Error retrieving secret:', error);
       throw new Error('Failed to retrieve secret');
@@ -298,7 +343,9 @@ export class SecretsService {
             projectId: data.projectId,
             collectionId: data.collectionId || null,
             owner: data.owner,
+            isEncrypted: data.isEncrypted || true, // Default to encrypted for backward compatibility
             encryptedData: data.encryptedData,
+            plainData: data.plainData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
@@ -332,14 +379,16 @@ export class SecretsService {
         
         // Check if user can access this group secret
         const groupEncryptedDataKey = data.encryptedDataKeys && data.encryptedDataKeys[`group:${groupId}`];
-        if (groupEncryptedDataKey) {
+        if (groupEncryptedDataKey || !data.isEncrypted) { // Allow access to plain text group secrets too
           secrets.push({
             id: doc.id,
             name: data.name,
             projectId: data.projectId,
             collectionId: data.collectionId || null,
             owner: data.owner,
+            isEncrypted: data.isEncrypted || true, // Default to encrypted for backward compatibility
             encryptedData: data.encryptedData,
+            plainData: data.plainData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
@@ -401,7 +450,9 @@ export class SecretsService {
             projectId: data.projectId,
             collectionId: data.collectionId || null,
             owner: data.owner,
+            isEncrypted: data.isEncrypted || true, // Default to encrypted for backward compatibility
             encryptedData: data.encryptedData,
+            plainData: data.plainData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
@@ -487,7 +538,9 @@ export class SecretsService {
             projectId: data.projectId,
             collectionId: data.collectionId || null,
             owner: data.owner,
+            isEncrypted: data.isEncrypted || true, // Default to encrypted for backward compatibility
             encryptedData: data.encryptedData,
+            plainData: data.plainData,
             encryptedDataKeys: data.encryptedDataKeys,
             lastModified: data.lastModified.toDate()
           });
@@ -504,3 +557,5 @@ export class SecretsService {
     }
   }
 }
+import { Collection } from '@/types';
+import { useState, useEffect, useCallback } from 'react';
