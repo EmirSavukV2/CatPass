@@ -24,6 +24,23 @@ export default function LoginPage() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      // send api request to create session cookie
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken }),
+      });
+
+      if (!response.ok) {
+        // Backend'den bir hata geldiyse
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Backend session creation failed.');
+      }
+
       // Wait for the auth state to propagate and user data to load
       await new Promise(resolve => setTimeout(resolve, 500));
       router.push('/unlock');

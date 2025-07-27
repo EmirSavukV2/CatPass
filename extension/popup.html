@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CatPass</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <span class="cat-emoji">🐱</span>
+                <h1>CatPass</h1>
+            </div>
+            <div class="auth-status" id="authStatus">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Login Form (shown when not authenticated) -->
+        <div class="login-form" id="loginForm" style="display: none;">
+            <h2>Login Required</h2>
+            <p>Please login to your CatPass account first.</p>
+            <div class="form-actions">
+                <button class="btn btn-primary" id="openWebApp">Open CatPass Web App</button>
+                <button class="btn btn-secondary" id="refreshAuth">🔄 Check Again</button>
+            </div>
+        </div>
+
+        <!-- Vault Unlock (shown when authenticated but vault locked) -->
+        <div class="unlock-form" id="unlockForm" style="display: none;">
+            <h2>Unlock Vault</h2>
+            <div class="form-group">
+                <input type="password" id="masterPassword" placeholder="Master Password" class="input">
+            </div>
+            <button class="btn btn-primary" id="unlockBtn">Unlock</button>
+        </div>
+
+        <!-- Main Content (shown when authenticated and unlocked) -->
+        <div class="main-content" id="mainContent" style="display: none;">
+            <!-- Navigation Tabs -->
+            <div class="nav-tabs">
+                <button class="tab-btn active" data-tab="projects">Projects</button>
+                <button class="tab-btn" data-tab="groups">Groups</button>
+            </div>
+
+            <!-- Projects Tab -->
+            <div class="tab-content active" id="projectsTab">
+                <div class="section-header">
+                    <h3>Projects</h3>
+                    <button class="btn btn-sm" id="refreshProjects">🔄</button>
+                </div>
+                <div class="list-container" id="projectsList">
+                    <div class="loading">Loading projects...</div>
+                </div>
+                
+                <!-- Project Secrets (shown when project selected) -->
+                <div class="secrets-section" id="projectSecrets" style="display: none;">
+                    <div class="section-header">
+                        <h3 id="projectSecretsTitle">Project Secrets</h3>
+                        <button class="btn btn-sm" id="backToProjects">← Back</button>
+                    </div>
+                    <div class="search-container">
+                        <input type="text" id="projectSecretSearch" placeholder="Search secrets..." class="input">
+                    </div>
+                    <div class="list-container" id="projectSecretsList">
+                        <div class="loading">Loading secrets...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Groups Tab -->
+            <div class="tab-content" id="groupsTab">
+                <div class="section-header">
+                    <h3>Groups</h3>
+                    <button class="btn btn-sm" id="refreshGroups">🔄</button>
+                </div>
+                <div class="list-container" id="groupsList">
+                    <div class="loading">Loading groups...</div>
+                </div>
+                
+                <!-- Group Secrets (shown when group selected) -->
+                <div class="secrets-section" id="groupSecrets" style="display: none;">
+                    <div class="section-header">
+                        <h3 id="groupSecretsTitle">Group Secrets</h3>
+                        <button class="btn btn-sm" id="backToGroups">← Back</button>
+                    </div>
+                    <div class="search-container">
+                        <input type="text" id="groupSecretSearch" placeholder="Search secrets..." class="input">
+                    </div>
+                    <div class="list-container" id="groupSecretsList">
+                        <div class="loading">Loading secrets...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Secret Detail Modal -->
+        <div class="modal" id="secretModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h4 id="secretTitle">Secret Details</h4>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="secret-field">
+                        <label>Name:</label>
+                        <span id="secretName"></span>
+                    </div>
+                    <div class="secret-field">
+                        <label>Username:</label>
+                        <div class="field-with-copy">
+                            <span id="secretUsername"></span>
+                            <button class="copy-btn" data-field="username">📋</button>
+                        </div>
+                    </div>
+                    <div class="secret-field">
+                        <label>Password:</label>
+                        <div class="field-with-copy">
+                            <span id="secretPassword" class="password-hidden">••••••••</span>
+                            <button class="toggle-btn" id="togglePassword">👁️</button>
+                            <button class="copy-btn" data-field="password">📋</button>
+                        </div>
+                    </div>
+                    <div class="secret-field">
+                        <label>URL:</label>
+                        <div class="field-with-copy">
+                            <a id="secretUrl" href="#" target="_blank"></a>
+                            <button class="copy-btn" data-field="url">📋</button>
+                        </div>
+                    </div>
+                    <div class="secret-field" id="notesField">
+                        <label>Notes:</label>
+                        <div class="notes-content" id="secretNotes"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast" id="toast" style="display: none;">
+            <span id="toastMessage"></span>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
