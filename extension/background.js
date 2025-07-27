@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'openWebApp') {
     chrome.tabs.create({
-      url: 'http://localhost:3000'
+      url: 'http://pass.paketiniz.com:3000'
     });
     sendResponse({ success: true });
   }

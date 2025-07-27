@@ -10,7 +10,7 @@
     ],
     "host_permissions": [
         "http://localhost:3000/*",
-        "https://your-catpass-domain.com/*"
+        "https://pass.paketiniz.com/*"
     ],
     "action": {
         "default_popup": "popup.html",

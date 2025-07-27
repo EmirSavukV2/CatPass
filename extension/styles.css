@@ -277,6 +277,8 @@ body {
     overflow-y: auto;
     flex-direction: column;
     padding: 8px;
+    max-height: 400px; /* Add max-height to enable scrolling */
+    min-height: 100px; /* Ensure minimum height */
 }
 
 .list-item {

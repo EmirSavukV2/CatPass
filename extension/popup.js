@@ -1,7 +1,7 @@
 // CatPass Extension Popup Script
 class CatPassExtension {
     constructor() {
-        this.baseUrl = 'http://localhost:3000';
+        this.baseUrl = 'https://pass.paketiniz.com';
         this.currentUser = null;
         this.isUnlocked = false;
         this.selectedProject = null;
