@@ -13,6 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   PlusIcon, 
   SearchIcon, 
@@ -21,11 +29,11 @@ import {
   CopyIcon,
   EditIcon,
   TrashIcon,
-  ArrowLeftIcon
+  ArrowLeftIcon,
+  FileTextIcon
 } from 'lucide-react';
 import { SecretModal } from '@/components/modals/secret-modal';
 import { useSecrets } from '@/hooks/use-secrets';
-import { useCollections } from '@/hooks/use-collections';
 import { useToast } from '@/components/ui/toast';
 import { SecretData } from '@/types';
 
@@ -49,6 +57,8 @@ export function SecretsTable({
   
   // Modal states
   const [isSecretModalOpen, setIsSecretModalOpen] = useState(false);
+  const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+  const [selectedSecretNotes, setSelectedSecretNotes] = useState<{ name: string; notes: string } | null>(null);
   
   // Edit states
   const [editingSecret, setEditingSecret] = useState<{ id: string; data: SecretData & { collectionId?: string } } | null>(null);
@@ -69,8 +79,6 @@ export function SecretsTable({
     selectedGroup || undefined, 
     selectedCollection || undefined
   );
-
-  const { collections } = useCollections(selectedProject || undefined, selectedGroup || undefined);
 
   const filteredSecrets = secrets.filter(secret =>
     secret.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -121,6 +129,18 @@ export function SecretsTable({
         } 
       });
       setIsSecretModalOpen(true);
+    }
+  };
+
+  const handleViewNotes = async (secretId: string) => {
+    const decryptedData = await decryptSecret(secretId);
+    const existingSecret = secrets.find(s => s.id === secretId);
+    if (decryptedData && existingSecret) {
+      setSelectedSecretNotes({
+        name: existingSecret.name,
+        notes: decryptedData.notes || 'No notes available'
+      });
+      setIsNotesModalOpen(true);
     }
   };
 
@@ -349,6 +369,7 @@ export function SecretsTable({
                 <TableHead>Username</TableHead>
                 <TableHead>Password</TableHead>
                 <TableHead>URL</TableHead>
+                <TableHead>Notes</TableHead>
                 <TableHead>Last Modified</TableHead>
                 <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
@@ -438,6 +459,31 @@ export function SecretsTable({
                         )}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center space-x-2">
+                        {decryptedData?.notes ? (
+                          <>
+                            <span className="truncate max-w-[100px] text-sm text-gray-600">
+                              {decryptedData.notes.length > 30 
+                                ? `${decryptedData.notes.substring(0, 30)}...` 
+                                : decryptedData.notes
+                              }
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleViewNotes(secret.id)}
+                              title="View full notes"
+                            >
+                              <FileTextIcon className="w-3 h-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-gray-500">
                       {secret.lastModified.toLocaleDateString()}
                     </TableCell>
@@ -484,6 +530,42 @@ export function SecretsTable({
         groupId={selectedGroup || undefined}
         selectedCollection={selectedCollection || undefined}
       />
+
+      {/* Notes Modal */}
+      {selectedSecretNotes && (
+        <Dialog open={isNotesModalOpen} onOpenChange={setIsNotesModalOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center space-x-2">
+                <FileTextIcon className="w-5 h-5" />
+                <span>Notes - {selectedSecretNotes.name}</span>
+              </DialogTitle>
+              <DialogDescription>
+                View and copy the notes for this secret.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <div className="whitespace-pre-wrap text-sm text-gray-700 max-h-96 overflow-y-auto">
+                  {selectedSecretNotes.notes}
+                </div>
+              </div>
+            </div>
+            <DialogFooter className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => copyToClipboard(selectedSecretNotes.notes)}
+              >
+                <CopyIcon className="w-4 h-4 mr-2" />
+                Copy Notes
+              </Button>
+              <Button onClick={() => setIsNotesModalOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   );
 }
