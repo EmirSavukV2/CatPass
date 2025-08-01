@@ -123,7 +123,7 @@ class CatPassExtension {
                     this.isUnlocked = true;
                     this.showMainContent();
                     // Load initial data after showing content
-                    this.switchTab('projects'); // This will load projects
+                    this.switchTab('groups'); // This will load projects
                 } else {
                     this.showUnlockForm();
                 }
